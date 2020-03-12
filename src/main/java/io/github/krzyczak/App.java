@@ -1,5 +1,7 @@
 package io.github.krzyczak;
 
+import org.apache.camel.AggregationStrategy;
+import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 
@@ -12,6 +14,29 @@ public class App
           @Override
           public void configure() {
             from("file://./?fileName=in.csv&noop=true")
+              .split(body().tokenize("\n"))
+              .filter().method(MyBean.class, "isGoldCustomer")
+              .aggregate(constant(true), new AggregationStrategy() {
+                  @Override
+                  public Exchange aggregate(Exchange oldExchange, Exchange newExchange) {
+                      if (oldExchange == null) {
+                          System.out.println("newExchange ----- " + newExchange.getIn().getBody());
+                          // we start a new correlation group, so complete all previous groups
+  //                        newExchange.setProperty(Exchange.AGGREGATION_COMPLETE_ALL_GROUPS, true);
+                          return newExchange;
+                      }
+
+                      String oldBody = oldExchange.getIn().getBody(String.class);
+                      String newBody = newExchange.getIn().getBody(String.class);
+
+                      System.out.println("oldExchange ----- " + oldBody);
+
+                      oldExchange.getIn().setBody(oldBody + "\n" + newBody);
+                      return oldExchange;
+                  }
+              })
+              .completionInterval(10000)
+
               .to("file://./?fileName=out.csv")
               .end();
           }
@@ -25,7 +50,7 @@ public class App
 
         try {
           System.out.println("Wating 2s...");
-          Thread.sleep(2000);
+          Thread.sleep(20000);
           System.out.println("Done Wating. Exiting.");
         } catch (InterruptedException e) {
           e.printStackTrace();
